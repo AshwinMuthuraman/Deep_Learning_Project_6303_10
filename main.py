@@ -1,13 +1,3 @@
-# GOOGLENET START # 
-
-'''
-x_time = datetime.datetime.now()
-sonuc_file = open(sonucFileName, "a")
-sonuc_file.write("\n\n--------------------\nGOOGLENET ")
-sonuc_file.write(x_time.strftime("%d-%m-%Y %H.%M.%S"))
-sonuc_file.write("\n")
-'''
-
 import torch
 from googlenet_pytorch import GoogLeNet 
 model = GoogLeNet.from_pretrained('googlenet')
