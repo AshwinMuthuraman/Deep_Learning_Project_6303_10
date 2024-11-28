@@ -1,16 +1,4 @@
-import torch
-from googlenet_pytorch import GoogLeNet 
-model = GoogLeNet.from_pretrained('googlenet')
-print(model)
 
-for param in model.parameters():
-    param.requires_grad = False
-
-#finetuning
-model.aux1.conv.conv = nn.Conv2d(512, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
-model.aux1.bn = nn.BatchNorm2d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
-model.aux1.fc1 = nn.Linear(in_features=2048, out_features=1024, bias=True)
-model.aux1.fc2 = nn.Linear(in_features=1024, out_features=1000, bias=True)
 
 model.aux2.conv.conv = nn.Conv2d(528, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
 model.aux2.bn = nn.BatchNorm2d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
