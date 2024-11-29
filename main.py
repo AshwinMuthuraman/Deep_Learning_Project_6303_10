@@ -1,11 +1,4 @@
 
-#Determine cross entropy and params updates
-criterion = nn.CrossEntropyLoss()
-model = model.to(device)
-params_to_update = model.parameters()
-print("Params to learn:")
-
-#parameters update
 params_to_update = []
 for name,param in model.named_parameters():
     if param.requires_grad == True:
