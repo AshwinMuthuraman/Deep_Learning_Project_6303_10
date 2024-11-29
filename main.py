@@ -1,15 +1,4 @@
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-if torch.cuda.is_available():
-    model.cuda()
-
-GoogleNetModel = model
-model.aux_logits = True
-learning_rate = 0.1     #learning rate should be determined here
-momentum = 0.9
-weight_decay = 0.0000001
-num_epochs  = 10
-
 #Determine cross entropy and params updates
 criterion = nn.CrossEntropyLoss()
 model = model.to(device)
