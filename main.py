@@ -1,19 +1,5 @@
 
-sonuc_file.write("\nLearning Rate: ")
-sonuc_file.write(str(learning_rate))
-sonuc_file.write("\n")
 
-sonuc_file.write("Optimizer: ")
-sonuc_file.write("Adam") # OPTIMIZER GIRMEYI UNUTMA !!!
-sonuc_file.write("\n")
-
-sonuc_file.write("Loss: ")
-sonuc_file.write("CrossEntropyLoss") # LOSS GIRMEYI UNUTMA !!!
-sonuc_file.write("\n")
-
-sonuc_file.write("Batch Size: ")
-sonuc_file.write(str(batch_size))
-sonuc_file.write("\n\n")
 '''
 
 total_step = len(train_loader)
