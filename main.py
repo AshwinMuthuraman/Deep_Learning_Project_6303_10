@@ -1,14 +1,4 @@
 
-params_to_update = []
-for name,param in model.named_parameters():
-    if param.requires_grad == True:
-        params_to_update.append(param)
-        print("\t",name)
-
-#optimizer should be bdetermined here
-optimizer = torch.optim.Adam(params_to_update, lr=learning_rate)
-
-'''
 sonuc_file.write("\nLearning Rate: ")
 sonuc_file.write(str(learning_rate))
 sonuc_file.write("\n")
