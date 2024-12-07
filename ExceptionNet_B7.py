@@ -53,7 +53,7 @@ class Config:
     TEST_DIR = os.path.join(DATA_DIR, 'test')
 
     # Training parameters
-    N_EPOCHS = 1
+    N_EPOCHS = 30
     BATCH_SIZE = 128  # Adjust based on GPU memory
     LEARNING_RATE = 1e-4
     IMAGE_SIZE = 224
