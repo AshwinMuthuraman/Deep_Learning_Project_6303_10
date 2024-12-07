@@ -313,7 +313,7 @@ def get_model(pretrained: bool = True, num_classes: int = cfg.OUTPUTS_A) -> nn.M
         from torchsummary import summary
         summary(model, (cfg.CHANNELS, cfg.IMAGE_SIZE, cfg.IMAGE_SIZE), device=cfg.DEVICE, print_fn=print_to_file)
 
-print(f"Model summary saved to {summary_path}")
+    print(f"Model summary saved to {summary_path}")
 
     # Freeze all layers except the classifier
     for param in model.parameters():
