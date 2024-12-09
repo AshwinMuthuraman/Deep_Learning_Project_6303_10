@@ -1,12 +1,4 @@
 
-steps=0
-running_loss=0
-print_every=2
-total = 0
-correct = 0
-
-if torch.cuda.is_available():
-    model.cuda()
 
 min_valid_loss = np.inf
 for epoch in range (num_epochs):   
