@@ -305,16 +305,6 @@ def get_model(pretrained: bool = True, num_classes: int = cfg.OUTPUTS_A) -> nn.M
     """
     model = models.efficientnet_b7(weights=models.EfficientNet_B7_Weights.IMAGENET1K_V1 if pretrained else None)
 
-    #summary_path = os.path.join(cfg.MODEL_SAVE_PATH, "model_summary.txt")
-    #with open(summary_path, "w") as f:
-    #    def print_to_file(*args):
-    #        print(*args, file=f)
-    # Use PyTorch summary to write model architecture
-    #    from torchsummary import summary
-    #    summary(model, (cfg.CHANNELS, cfg.IMAGE_SIZE, cfg.IMAGE_SIZE), device=cfg.DEVICE, print_fn=print_to_file)
-
-    #print(f"Model summary saved to {summary_path}")
-
     # Freeze all layers except the classifier
     for param in model.parameters():
         param.requires_grad = False
