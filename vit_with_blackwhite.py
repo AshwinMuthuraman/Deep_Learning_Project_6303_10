@@ -376,7 +376,7 @@ def get_model(pretrained: bool = True, num_classes: int = LABEL_SIZE) -> nn.Modu
         param.requires_grad = False
 
     # Replace the classifier head
-    num_ftrs = model.heads.head.in_features  # For torchvision's ViT, the head is `heads.head`
+    num_ftrs = model.heads.head.in_features  
     model.heads.head = nn.Linear(num_ftrs, num_classes)
 
     return model.to(DEVICE)
