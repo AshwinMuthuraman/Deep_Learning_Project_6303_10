@@ -1,1 +1,2 @@
 VIT_early_stop_best_model.pth filter=lfs diff=lfs merge=lfs -text
+VIT_with_bw_images.pth filter=lfs diff=lfs merge=lfs -text
