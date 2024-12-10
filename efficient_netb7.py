@@ -1,8 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Advanced Chess FEN Generation using EfficientNet-B7
-Leveraging NVIDIA A10G GPU for optimized training
-"""
 import os
 import glob
 import random
