@@ -274,26 +274,6 @@ def prepare_dataloaders(folder: str, transform, batch_size: int = cfg.BATCH_SIZE
 
 
 
-'''def get_model(pretrained: bool = True, num_classes: int = cfg.OUTPUTS_A) -> nn.Module:
-    """
-    Initialize and return the pre-trained EfficientNet-B7 model.
-    """
-    model = models.efficientnet_b7(weights=models.EfficientNet_B7_Weights.IMAGENET1K_V1 if pretrained else None)
-
-    # Freeze all layers except the classifier
-    for param in model.parameters():
-        param.requires_grad = False
-
-    # Replace the classifier head
-    num_ftrs = model.classifier[1].in_features
-    model.classifier = nn.Sequential(
-        nn.Dropout(p=0.5, inplace=True),
-        nn.Linear(num_ftrs, num_classes)
-    )
-
-    return model.to(cfg.DEVICE)'''
-
-
 
 def get_model(pretrained: bool = True, num_classes: int = cfg.OUTPUTS_A) -> nn.Module:
     model = models.alexnet(pretrained=pretrained)
