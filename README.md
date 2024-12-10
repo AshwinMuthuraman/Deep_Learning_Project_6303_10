@@ -28,6 +28,6 @@ We use **Captum**, an open-source library for model interpretability, to underst
 
 ## Frontend Interface
 For a user-friendly experience, we are developing a frontend application using **Streamlit**. This interface will allow users to upload images of chessboards and view the corresponding FEN notation as predicted by our models.
-
+NOTE : for accessing the model weights file for streamlit, please download the weights file from the following link : https://drive.google.com/drive/folders/1-xuac4Z_l6Sc06tr6IIWzEoZNO8kvgtW?usp=sharing 
 ## Project Significance
 This project stands at the intersection of advanced machine learning techniques and game theory, offering valuable insights into automated game analysis and enhancing AI applications in strategy games like chess.
