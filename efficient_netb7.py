@@ -43,13 +43,13 @@ set_seed()
 class Config:
     # Paths
     ORIGINAL_PATH = '/home/ubuntu/FinalProject/'
-    DATA_DIR = os.path.join(ORIGINAL_PATH, 'dataset')  # Assuming dataset folder is in current directory
+    DATA_DIR = os.path.join(ORIGINAL_PATH, 'dataset')  
     TRAIN_DIR = os.path.join(DATA_DIR, 'train')
     TEST_DIR = os.path.join(DATA_DIR, 'test')
 
     # Training parameters
     N_EPOCHS = 30
-    BATCH_SIZE = 128  # Adjust based on GPU memory
+    BATCH_SIZE = 128  
     LEARNING_RATE = 1e-4
     IMAGE_SIZE = 224
     CHANNELS = 3
@@ -58,8 +58,8 @@ class Config:
     EARLY_STOPPING_PATIENCE = 5  # Number of epochs to wait before early stopping
 
     # DataLoader parameters
-    NUM_WORKERS = 8  # Adjust based on CPU cores
-    PIN_MEMORY = True  # For faster data transfer to CUDA
+    NUM_WORKERS = 8  
+    PIN_MEMORY = True  
 
     # Model parameters
     OUTPUTS_A = 13  # Number of classes
