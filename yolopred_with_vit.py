@@ -2,43 +2,27 @@ import streamlit as st
 import cv2
 import numpy as np
 import torch
-import torchvision  # For NMS and models
+import torchvision  # For NMS
 from PIL import Image as PILImage  # Aliased to prevent conflicts
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
 import av
-import os
-from typing import List, Tuple, Dict
-
-# Import matplotlib.pyplot and alias as plt
-import matplotlib.pyplot as plt  # Ensure this import is present
+import uuid
+from io import BytesIO
+from pathlib import Path
+import matplotlib.pyplot as plt  # Import matplotlib for grid visualization
 
 # ---------------------------- Constants and Configurations ----------------------------
 
 # YOLOv7 Configuration
-YOLO_WEIGHTS_PATH = "/home/praneeth/GWU/FALL_24/DEEP_LEARNING/Project/Deep_Learning_Project_6303_10/YOLO.pt"  # Path to YOLO model weights
+YOLO_WEIGHTS_PATH = "/home/praneeth/GWU/FALL_24/DEEP_LEARNING/Project/best.pt"  # Path to YOLO model weights
 YOLO_CONF_THRESHOLD = 0.25
 YOLO_IOU_THRESHOLD = 0.45
 YOLO_CLASS_NAMES = ["chessboard"]  # List of class names
 
-# FEN Models Configuration
-FEN_MODELS_CONFIG = {
-    "AlexNet": {
-        "model_path": "/home/praneeth/GWU/FALL_24/DEEP_LEARNING/Project/Deep_Learning_Project_6303_10/FEN_MODELS/ALEX_NET_best_model.pth",
-        "architecture": "alexnet"
-    },
-    "Vision Transformer": {
-        "model_path": "/home/praneeth/GWU/FALL_24/DEEP_LEARNING/Project/Deep_Learning_Project_6303_10/FEN_MODELS/VIT_with_bw_images.pth",
-        "architecture": "vit"
-    },
-    "EfficientNet-B7": {  # Updated EfficientNet-B7 configuration
-        "model_path": "/home/praneeth/GWU/FALL_24/DEEP_LEARNING/Project/Deep_Learning_Project_6303_10/FEN_MODELS/effnet_best_model.pth",
-        "architecture": "efficientnet-b7"  # Changed from 'efficientnet_b7' to 'efficientnet-b7'
-    }
-}
-
-# FEN Model Specifics
+# FEN Model Configuration
+FEN_MODEL_PATH = '/home/praneeth/GWU/FALL_24/DEEP_LEARNING/Project/Deep_Learning_Project_6303_10/VIT_early_stop_best_model.pth'  # Path to FEN model weights
 FEN_IMAGE_SIZE = 224
 LABEL_TO_FEN_SHORT = {
     0: '0', 1: 'p', 2: 'P',
@@ -61,13 +45,11 @@ RTC_CONFIGURATION = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.goog
 # ---------------------------- YOLOv7 Functions ----------------------------
 
 @st.cache_resource
-def load_yolo_model(weights_path: str, device: torch.device):
+def load_yolo_model(weights_path, device):
     """
     Loads the YOLOv7 model from the provided weights file.
     """
     try:
-        # Assuming YOLOv7 model is saved as a TorchScript or similar format
-        # Adjust the loading method based on how the model was saved
         model = torch.load(weights_path, map_location=device)['model'].float().eval()
         st.success("YOLOv7 model loaded successfully.")
         return model
@@ -104,7 +86,7 @@ def xywh2xyxy(x):
     """
     Convert YOLOv7 format from center x, center y, width, height to x1, y1, x2, y2
     """
-    y = x.clone()
+    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
     y[:, 0] = x[:, 0] - x[:, 2] / 2  # x1
     y[:, 1] = x[:, 1] - x[:, 3] / 2  # y1
     y[:, 2] = x[:, 0] + x[:, 2] / 2  # x2
@@ -124,14 +106,14 @@ def rescale_coords(img_shape, coords, original_shape):
     coords[:, [1, 3]] = coords[:, [1, 3]].clip(0, original_shape[0])  # y1, y2
     return coords
 
-def run_yolo_inference(model, image: np.ndarray, conf_thres=0.25, iou_thres=0.45, device='cuda'):
+def run_yolo_inference(model, image, conf_thres=0.25, iou_thres=0.45, device='cuda'):
     """
     Perform inference on an image using YOLOv7.
     """
     original_shape = image.shape[:2]  # Height, Width
 
     # Preprocess Image
-    img, ratio, pad = letterbox(image, new_shape=(640, 640))
+    img = letterbox(image, new_shape=(640, 640))[0]  # Resize
     img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to CHW
     img = np.ascontiguousarray(img)
     img = torch.from_numpy(img).to(device).float() / 255.0  # Normalize
@@ -270,113 +252,30 @@ def order_points(pts):
 # ---------------------------- FEN Prediction Functions ----------------------------
 
 @st.cache_resource
-def load_fen_models(config: Dict[str, Dict[str, str]], device: torch.device) -> Dict[str, torch.nn.Module]:
+def load_fen_model(model_path, num_classes=13):
     """
-    Load all FEN models based on the provided configuration.
-    Returns a dictionary mapping model names to model instances.
-    """
-    models = {}
-    for model_name, model_info in config.items():
-        model_path = model_info["model_path"]
-        architecture = model_info["architecture"]
-        if not os.path.exists(model_path):
-            st.error(f"Model file not found: {model_path}")
-            continue
-        try:
-            if architecture.lower() == "alexnet":
-                model = define_alexnet_model(num_classes=13)
-            elif architecture.lower() == "vit":
-                model = define_vit_model(num_classes=13)
-                if model is None:
-                    st.error(f"Failed to define ViT model for '{model_name}'.")
-                    continue
-            elif architecture.lower() == "efficientnet-b7":
-                model = define_efficientnet_b7_model(num_classes=13)
-                if model is None:
-                    st.error(f"Failed to define EfficientNet-B7 model for '{model_name}'.")
-                    continue
-            else:
-                st.error(f"Unsupported architecture '{architecture}' for model '{model_name}'.")
-                continue
-            model.load_state_dict(torch.load(model_path, map_location=device))
-            model.to(device)
-            model.eval()
-            models[model_name] = model
-            st.success(f"Loaded FEN model: {model_name}")
-        except Exception as e:
-            st.error(f"Error loading model '{model_name}': {e}")
-    return models
-
-def define_alexnet_model(num_classes=13):
-    """
-    Define the AlexNet architecture for FEN prediction.
-    """
-    model = torchvision.models.alexnet(pretrained=False)
-    for param in model.parameters():
-        param.requires_grad = False
-
-    # Modify the classifier to match the number of classes
-    model.classifier = torch.nn.Sequential(
-        torch.nn.Dropout(),
-        torch.nn.Linear(256 * 6 * 6, 4096),
-        torch.nn.ReLU(inplace=True),
-        torch.nn.Dropout(),
-        torch.nn.Linear(4096, 4096),
-        torch.nn.ReLU(inplace=True),
-        torch.nn.Linear(4096, num_classes),
-    )
-    return model.to(DEVICE)
-
-def define_vit_model(num_classes=13):
-    """
-    Define the Vision Transformer (ViT) architecture for FEN prediction.
-    Ensures that the classifier head matches the training configuration.
+    Load the trained FEN model with your saved weights.
     """
     try:
-        from torchvision.models import vit_b_16
-
-        # Initialize ViT-B/16 model without pretrained weights
-        model = vit_b_16(pretrained=False)
-
-        # Freeze all layers except the classifier head
-        for param in model.parameters():
-            param.requires_grad = False
-
-        # Modify the classifier head to match the number of classes
-        num_ftrs = model.heads.head.in_features
-        model.heads.head = torch.nn.Linear(num_ftrs, num_classes)
-
-        return model.to(DEVICE)
-    except ImportError:
-        st.error("Vision Transformer (ViT) is not available in your torchvision version.")
+        model = define_fen_model(num_classes=num_classes)
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+        model.to(DEVICE)
+        model.eval()
+        st.success("FEN prediction model loaded successfully.")
+        return model
+    except Exception as e:
+        st.error(f"Error loading FEN model: {e}")
         return None
 
-def define_efficientnet_b7_model(num_classes=13):
+def define_fen_model(num_classes=13):
     """
-    Define the EfficientNet-B7 architecture for FEN prediction.
+    Define your model architecture. Ensure it matches the architecture used for training.
     """
-    try:
-        from torchvision.models import efficientnet_b7, EfficientNet_B7_Weights
-
-        # Initialize EfficientNet-B7 model
-        weights = EfficientNet_B7_Weights.IMAGENET1K_V1 if torch.cuda.is_available() else None
-        model = efficientnet_b7(weights=weights)
-
-        # Freeze all layers except the classifier head
-        for param in model.parameters():
-            param.requires_grad = False
-
-        # Replace the classifier head
-        num_ftrs = model.classifier[1].in_features
-        model.classifier = torch.nn.Sequential(
-            torch.nn.Dropout(p=0.5, inplace=True),
-            torch.nn.Linear(num_ftrs, num_classes)
-        )
-
-        return model.to(DEVICE)
-    except ImportError:
-        st.error("EfficientNet-B7 is not available in your torchvision version.")
-        return None
+    from torchvision.models import vit_b_16
+    model = vit_b_16(weights=None)  # Do not load pretrained weights
+    num_ftrs = model.heads.head.in_features
+    model.heads.head = torch.nn.Linear(num_ftrs, num_classes)  # Match your training setup
+    return model
 
 def split_image_into_grids(image):
     """
@@ -389,8 +288,7 @@ def split_image_into_grids(image):
     for i in range(0, h, grid_h):
         for j in range(0, w, grid_w):
             grid = image[i:i + grid_h, j:j + grid_w]
-            if grid.shape[0] == grid_h and grid.shape[1] == grid_w:
-                grids.append(grid)
+            grids.append(grid)
     return grids
 
 def label_to_fen(label_list):
@@ -422,64 +320,48 @@ transform = A.Compose([
     ToTensorV2()
 ])
 
-def predict_fen_from_image(models: Dict[str, torch.nn.Module], image, use_yolo=False):
+def predict_fen_from_image(model, image):
     """
-    Predicts the FEN notation for a given chessboard image using selected models.
-    If use_yolo is True, the image is assumed to be a warped chessboard already.
-    If use_yolo is False, the image is treated as a single chessboard without detection.
-    Returns a dictionary mapping model names to their predicted FEN strings.
+    Predicts the FEN notation for a given chessboard image.
+    The image should be a BGR or RGB image as a NumPy array.
     """
     if image is None:
         st.error("No image provided for FEN prediction.")
-        return {}
+        return "Error"
 
-    if use_yolo:
-        # The image is already a warped chessboard (cropped and transformed)
-        chessboards = [image]
+    # Convert to grayscale if not already
+    if len(image.shape) == 3 and image.shape[2] == 3:
+        image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
-        # The image is treated as a single chessboard
-        chessboards = [image]
+        image_gray = image.copy()
 
-    fen_predictions = {}
-    for model_name, model in models.items():
-        predicted_labels = []
-        for chessboard in chessboards:
-            try:
-                # Convert to grayscale if not already
-                if len(chessboard.shape) == 3 and chessboard.shape[2] == 3:
-                    chessboard_gray = cv2.cvtColor(chessboard, cv2.COLOR_BGR2GRAY)
-                else:
-                    chessboard_gray = chessboard.copy()
+    # Split image into grids
+    grids = split_image_into_grids(image_gray)
+    if len(grids) != 64:
+        st.error(f"Image does not have 64 grids (got {len(grids)}). Check cropping and warping.")
+        return "Error"
 
-                # Split image into grids
-                grids = split_image_into_grids(chessboard_gray)
-                if len(grids) != 64:
-                    st.warning(f"Chessboard image does not have 64 grids (got {len(grids)}). Check cropping and warping.")
-                    continue
+    # Predict the labels for each grid
+    predicted_labels = []
+    for grid_idx, grid in enumerate(grids, 1):
+        try:
+            # Preprocess grid
+            grid_resized = cv2.resize(grid, (FEN_IMAGE_SIZE, FEN_IMAGE_SIZE))
+            grid_rgb = cv2.cvtColor(grid_resized, cv2.COLOR_GRAY2RGB)
+            input_tensor = transform(image=np.array(grid_rgb))['image'].unsqueeze(0).to(DEVICE)
 
-                for grid_idx, grid in enumerate(grids, 1):
-                    # Preprocess grid
-                    grid_resized = cv2.resize(grid, (FEN_IMAGE_SIZE, FEN_IMAGE_SIZE))
-                    if len(grid_resized.shape) == 2:  # Grayscale to RGB
-                        grid_rgb = cv2.cvtColor(grid_resized, cv2.COLOR_GRAY2RGB)
-                    else:
-                        grid_rgb = cv2.cvtColor(grid_resized, cv2.COLOR_BGR2RGB)
-                    input_tensor = transform(image=np.array(grid_rgb))['image'].unsqueeze(0).to(DEVICE)
+            # Model prediction
+            with torch.no_grad():
+                outputs = model(input_tensor)
+                _, pred = torch.max(outputs, 1)
+                predicted_labels.append(pred.item())
+        except Exception as e:
+            st.warning(f"Error processing grid {grid_idx}: {e}")
+            predicted_labels.append(0)  # Assuming '0' is 'empty'
 
-                    # Model prediction
-                    with torch.no_grad():
-                        outputs = model(input_tensor)
-                        _, pred = torch.max(outputs, 1)
-                        predicted_labels.append(pred.item())
-            except Exception as e:
-                st.warning(f"Error processing chessboard with model {model_name}: {e}")
-                predicted_labels.append(0)  # Assuming '0' is 'empty'
-
-        # Convert labels to FEN
-        fen = label_to_fen(predicted_labels)
-        fen_predictions[model_name] = fen
-
-    return fen_predictions
+    # Convert labels to FEN
+    fen = label_to_fen(predicted_labels)
+    return fen
 
 def visualize_grids(image, title="Chessboard Grids"):
     """
@@ -510,9 +392,9 @@ def sanitize_fen(fen):
 # ---------------------------- Webcam Video Processor ----------------------------
 
 class VideoProcessor(VideoProcessorBase):
-    def __init__(self, yolo_model, fen_models):
+    def __init__(self, yolo_model, fen_model):
         self.yolo_model = yolo_model
-        self.fen_models = fen_models
+        self.fen_model = fen_model
         self.fen_results = []  # Initialize as an empty list
 
     def recv(self, frame):
@@ -535,16 +417,15 @@ class VideoProcessor(VideoProcessorBase):
             # Apply the corner detection and perspective transform pipeline
             processed_img, warped = process_chessboard(img, det)
             if warped is not None:
-                # Predict FEN with selected models
-                fen_predictions = predict_fen_from_image(self.fen_models, warped, use_yolo=True)
-                fen_text = "; ".join([f"{model}: {fen}" for model, fen in fen_predictions.items()])
-                self.fen_results.append(fen_text)
+                # Predict FEN
+                fen = predict_fen_from_image(self.fen_model, warped)
+                self.fen_results.append(fen)
 
                 # Overlay FEN annotation near the bounding box on the annotated image
                 x1, y1, x2, y2 = map(int, det[:4])
                 # Position the text slightly above the top-left corner of the bounding box
                 text_position = (x1, y1 - 10 if y1 - 10 > 10 else y1 + 10)
-                cv2.putText(annotated_image, fen_text, text_position,
+                cv2.putText(annotated_image, fen, text_position,
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
                 # Limit the number of stored FEN results to the last 10
@@ -558,111 +439,22 @@ class VideoProcessor(VideoProcessorBase):
 
 def main():
     st.title("Chessboard Detection and FEN Prediction")
-    st.write("Choose between using YOLO for chessboard detection with webcam/image upload or directly predict FEN from uploaded images.")
+    st.write("Upload an image or use your webcam to detect chessboards and generate FEN notation.")
 
-    # Mode Selection
-    mode = st.radio(
-        "Select Mode:",
-        ("Use YOLO for Chessboard Detection", "Direct FEN Prediction")
-    )
+    # Load Models
+    yolo_model = load_yolo_model(YOLO_WEIGHTS_PATH, DEVICE)
+    fen_model = load_fen_model(FEN_MODEL_PATH)
 
-    # Load FEN Models (always needed)
-    fen_models = load_fen_models(FEN_MODELS_CONFIG, DEVICE)
+    if yolo_model is None or fen_model is None:
+        st.error("Failed to load the necessary models. Please check the model paths.")
+        return
 
-    if mode == "Use YOLO for Chessboard Detection":
-        # Load YOLO model
-        yolo_model = load_yolo_model(YOLO_WEIGHTS_PATH, DEVICE)
+    # Sidebar for Options
+    st.sidebar.header("Options")
+    option = st.sidebar.selectbox("Choose Input Method", ("Upload Image", "Use Webcam"))
 
-        if yolo_model is None or not fen_models:
-            st.error("Failed to load the necessary models. Please check the model paths.")
-            return
-
-        # Input Method Selection
-        input_method = st.selectbox(
-            "Choose Input Method:",
-            ("Webcam", "Upload Image")
-        )
-
-        if input_method == "Webcam":
-            # Webcam Input with YOLO
-            st.write("### Webcam Chessboard Detection and FEN Prediction")
-            webrtc_ctx = webrtc_streamer(
-                key="chessboard-detection",
-                mode=WebRtcMode.SENDRECV,
-                rtc_configuration=RTC_CONFIGURATION,
-                media_stream_constraints={"video": True, "audio": False},
-                video_processor_factory=lambda: VideoProcessor(yolo_model, fen_models),
-                async_processing=True,
-            )
-
-            # Placeholder for FEN results
-            st.write("### FEN Results")
-            if webrtc_ctx.video_processor:
-                fen_list = webrtc_ctx.video_processor.fen_results if hasattr(webrtc_ctx.video_processor, 'fen_results') else []
-                for idx, fen in enumerate(fen_list, 1):
-                    st.write(f"**Chessboard {idx} FEN**: `{fen}`")
-
-        elif input_method == "Upload Image":
-            # Image Upload with YOLO
-            st.write("### Image Upload Chessboard Detection and FEN Prediction")
-            uploaded_files = st.file_uploader("Upload Image(s)", type=IMAGE_EXTENSIONS, accept_multiple_files=True)
-            if uploaded_files:
-                for img_idx, uploaded_file in enumerate(uploaded_files, 1):
-                    try:
-                        # Read image
-                        image = PILImage.open(uploaded_file).convert('RGB')  # Use PILImage to avoid conflict
-                        image_np = np.array(image)
-                        st.subheader(f"Processing {uploaded_file.name}")
-                        st.image(image_np, caption='Uploaded Image', use_column_width=True)
-
-                        # YOLOv7 Inference
-                        detections = run_yolo_inference(yolo_model, image_np, conf_thres=YOLO_CONF_THRESHOLD, 
-                                                        iou_thres=YOLO_IOU_THRESHOLD, device=DEVICE)
-                        st.write(f"Number of chessboards detected: {len(detections)}")
-
-                        if not detections:
-                            st.warning("No chessboards detected in this image.")
-                            continue
-
-                        # Draw Bounding Boxes
-                        annotated_image = draw_yolo_boxes(image_np.copy(), detections, YOLO_CLASS_NAMES)
-                        st.image(annotated_image, caption='Annotated Image', use_column_width=True)
-
-                        # Process Each Detection
-                        for det_idx, det in enumerate(detections, 1):
-                            cls = int(det[5])
-                            if YOLO_CLASS_NAMES[cls] != "chessboard":
-                                continue  # Skip if not a chessboard
-
-                            # Assign a unique key for each checkbox
-                            checkbox_label = f"Show grids for Chessboard {det_idx} in {uploaded_file.name}"
-                            checkbox_key = f"show_grids_{img_idx}_{det_idx}"
-                            show_grids = st.checkbox(checkbox_label, key=checkbox_key)
-
-                            if show_grids:
-                                # Apply the corner detection and perspective transform pipeline
-                                processed_img, warped = process_chessboard(image_np, det)
-                                if warped is not None:
-                                    # Predict FEN with selected models
-                                    fen_predictions = predict_fen_from_image(fen_models, warped, use_yolo=True)
-                                    for model_name, fen in fen_predictions.items():
-                                        st.write(f"**{model_name} Predicted FEN**: `{fen}`")
-
-                                    # Display Warped Chessboard
-                                    st.image(warped, caption=f'Warped Chessboard {det_idx} in {uploaded_file.name}', use_column_width=True)
-
-                                    # Visualize the grids for debugging
-                                    visualize_grids(warped, title=f"Chessboard {det_idx} Grids in {uploaded_file.name}")
-                                else:
-                                    st.warning(f"Failed to process chessboard {det_idx} in {uploaded_file.name}.")
-
-                    except Exception as e:
-                        st.error(f"Error processing {uploaded_file.name}: {e}")
-
-    elif mode == "Direct FEN Prediction":
-        # Direct FEN Prediction without YOLO
-        st.write("### Direct FEN Prediction from Uploaded Images")
-        uploaded_files = st.file_uploader("Upload Image(s)", type=IMAGE_EXTENSIONS, accept_multiple_files=True)
+    if option == "Upload Image":
+        uploaded_files = st.sidebar.file_uploader("Upload Image(s)", type=IMAGE_EXTENSIONS, accept_multiple_files=True)
         if uploaded_files:
             for img_idx, uploaded_file in enumerate(uploaded_files, 1):
                 try:
@@ -672,35 +464,68 @@ def main():
                     st.subheader(f"Processing {uploaded_file.name}")
                     st.image(image_np, caption='Uploaded Image', use_column_width=True)
 
-                    # Assign a unique key for each checkbox
-                    checkbox_label = f"Show grids for Chessboard {img_idx} in {uploaded_file.name}"
-                    checkbox_key = f"show_grids_direct_{img_idx}"
-                    show_grids = st.checkbox(checkbox_label, key=checkbox_key)
+                    # YOLOv7 Inference
+                    detections = run_yolo_inference(yolo_model, image_np, conf_thres=YOLO_CONF_THRESHOLD, 
+                                                    iou_thres=YOLO_IOU_THRESHOLD, device=DEVICE)
+                    st.write(f"Number of chessboards detected: {len(detections)}")
 
-                    if show_grids:
-                        # Split the image into grids directly
-                        # Convert to grayscale if not already
-                        if len(image_np.shape) == 3 and image_np.shape[2] == 3:
-                            image_gray = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
-                        else:
-                            image_gray = image_np.copy()
+                    if not detections:
+                        st.warning("No chessboards detected in this image.")
+                        continue
 
-                        # Split image into grids
-                        grids = split_image_into_grids(image_gray)
-                        if len(grids) != 64:
-                            st.warning(f"Uploaded image does not have 64 grids (got {len(grids)}). Check image dimensions.")
-                            continue
+                    # Draw Bounding Boxes
+                    annotated_image = draw_yolo_boxes(image_np.copy(), detections, YOLO_CLASS_NAMES)
+                    st.image(annotated_image, caption='Annotated Image', use_column_width=True)
 
-                        # Predict FEN with selected models
-                        fen_predictions = predict_fen_from_image(fen_models, image_np, use_yolo=False)
-                        for model_name, fen in fen_predictions.items():
-                            st.write(f"**{model_name} Predicted FEN**: `{fen}`")
+                    # Process Each Detection
+                    for det_idx, det in enumerate(detections, 1):
+                        cls = int(det[5])
+                        if YOLO_CLASS_NAMES[cls] != "chessboard":
+                            continue  # Skip if not a chessboard
 
-                        # Visualize the grids for debugging
-                        visualize_grids(image_np, title=f"Chessboard Grids in {uploaded_file.name}")
+                        # Assign a unique key for each checkbox
+                        checkbox_label = f"Show grids for Chessboard {det_idx} in {uploaded_file.name}"
+                        checkbox_key = f"show_grids_{img_idx}_{det_idx}"
+                        show_grids = st.checkbox(checkbox_label, key=checkbox_key)
+
+                        if show_grids:
+                            # Apply the corner detection and perspective transform pipeline
+                            processed_img, warped = process_chessboard(image_np, det)
+                            if warped is not None:
+                                # Predict FEN
+                                fen = predict_fen_from_image(fen_model, warped)
+                                st.write(f"**Predicted FEN**: `{fen}`")
+
+                                # Display Warped Chessboard
+                                st.image(warped, caption=f'Warped Chessboard {det_idx} in {uploaded_file.name}', use_column_width=True)
+
+                                # Visualize the grids for debugging
+                                visualize_grids(warped, title=f"Chessboard {det_idx} Grids in {uploaded_file.name}")
+                            else:
+                                st.warning(f"Failed to process chessboard {det_idx} in {uploaded_file.name}.")
 
                 except Exception as e:
                     st.error(f"Error processing {uploaded_file.name}: {e}")
+
+    elif option == "Use Webcam":
+        st.sidebar.write("Click the button below to start webcam and capture images.")
+        webrtc_ctx = webrtc_streamer(
+            key="chessboard-detection",
+            mode=WebRtcMode.SENDRECV,
+            rtc_configuration=RTC_CONFIGURATION,
+            media_stream_constraints={"video": True, "audio": False},
+            video_processor_factory=lambda: VideoProcessor(yolo_model, fen_model),
+            async_processing=True,
+        )
+
+        # Placeholder for FEN results
+        st.write("### FEN Results")
+        if webrtc_ctx.video_processor:
+            fen_list = webrtc_ctx.video_processor.fen_results if hasattr(webrtc_ctx.video_processor, 'fen_results') else []
+            for idx, fen in enumerate(fen_list, 1):
+                st.write(f"**Chessboard {idx} FEN**: `{fen}`")
+
+# ---------------------------- Entry Point ----------------------------
 
 if __name__ == "__main__":
     main()
